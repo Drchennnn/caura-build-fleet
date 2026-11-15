@@ -52,6 +52,37 @@ def test_summarise_dict():
     assert "key" in result
 
 
+# ── _tool_message_content ─────────────────────────────────────────────────
+
+@pytest.mark.parametrize("tool, result", [
+    ("memclaw_write", {"payload": '"\n\\雪' * 1600}),
+    ("memclaw_recall", {"summary": "雪" * 4100}),
+    ("memclaw_write", ["x" * 4100]),
+    ("memclaw_write", "x" * 4100),
+])
+def test_tool_message_large_payload_stays_valid_and_bounded(tool, result):
+    content = agent_base._tool_message_content(tool, result)
+    parsed = json.loads(content)
+    assert parsed["truncated"] is True
+    assert parsed["preview"]
+    assert len(content) <= 4000
+
+
+@pytest.mark.parametrize("result, formatted", [
+    ("plain text", "plain text"),
+    ({"payload": "雪"}, '{"payload": "雪"}'),
+    (["雪"], '["\\u96ea"]'),
+])
+def test_tool_message_preserves_small_payload(result, formatted):
+    assert agent_base._tool_message_content("memclaw_write", result, len(formatted)) == formatted
+
+
+def test_tool_message_uses_marker_only_when_preview_cannot_fit():
+    marker = '{"truncated":true}'
+    out = agent_base._tool_message_content("memclaw_write", "x" * 100, len(marker))
+    assert out == marker
+
+
 # ── run_agent — no tool calls (pure text response) ───────────────────────────
 
 @patch("agent_base._llm")

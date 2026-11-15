@@ -281,11 +281,10 @@ def _summarise(obj: Any, max_len: int = 120) -> str:
 def _tool_message_content(tool_name: str, result: Any, max_len: int = 4000) -> str:
     """Compact large tool payloads before sending them back to the model."""
     if isinstance(result, str):
-        return result[:max_len] + "…" if len(result) > max_len else result
+        return _bounded_tool_preview(result, max_len)
 
     if not isinstance(result, dict):
-        text = json.dumps(result)
-        return text[:max_len] + "…" if len(text) > max_len else text
+        return _bounded_tool_preview(json.dumps(result), max_len)
 
     compact: dict[str, Any] = result
 
@@ -317,7 +316,33 @@ def _tool_message_content(tool_name: str, result: Any, max_len: int = 4000) -> s
         }
 
     text = json.dumps(compact, ensure_ascii=False)
-    return text[:max_len] + "…" if len(text) > max_len else text
+    return _bounded_tool_preview(text, max_len)
+
+
+def _bounded_tool_preview(text: str, max_len: int) -> str:
+    """Wrap oversized text in JSON and account for escaping within the cap."""
+    if len(text) <= max_len:
+        return text
+
+    marker = {"truncated": True}
+    best = json.dumps(marker, separators=(",", ":"))
+    if len(best) > max_len:
+        raise ValueError("max_len must fit the truncation marker")
+
+    # A longer prefix can only increase the encoded length. Search the
+    # bounded prefix, not the full payload, for the longest one that fits.
+    lo, hi = 1, max_len
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        candidate = json.dumps(
+            {**marker, "preview": text[:mid]}, ensure_ascii=False, separators=(",", ":"),
+        )
+        if len(candidate) <= max_len:
+            best = candidate
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return best
 
 
 def _truncate_text(value: Any, max_len: int) -> str:
