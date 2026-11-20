@@ -327,6 +327,10 @@ def _request_with_retry(
                     continue
                 r.raise_for_status()
 
+            # The REST delete endpoint returns 204 without a JSON body.
+            if method == "DELETE" and r.status_code == 204:
+                return {"deleted": True}
+
             # Validate JSON response
             ct = r.headers.get("Content-Type", "")
             if "application/json" not in ct:

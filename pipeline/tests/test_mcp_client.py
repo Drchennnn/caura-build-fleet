@@ -168,6 +168,47 @@ def test_manage_read(mock_get):
     assert result["id"] == "mem-1"
 
 
+@patch("mcp_client.requests.delete")
+def test_manage_delete_accepts_204_without_json(mock_delete, monkeypatch):
+    monkeypatch.setenv("MEMCLAW_TRANSPORT", "rest")
+    response = mcp.requests.Response()
+    response.status_code = 204
+    mock_delete.return_value = response
+
+    assert mcp.call_tool("memclaw_manage", {"op": "delete", "memory_id": "mem-1"}) == {"deleted": True}
+    mock_delete.assert_called_once()
+
+
+@patch("mcp_client.requests.delete")
+def test_manage_delete_preserves_json_response(mock_delete):
+    payload = {"id": "mem-1", "status": "deleted"}
+    mock_delete.return_value = _json_response(payload)
+
+    assert mcp._manage({"op": "delete", "memory_id": "mem-1"}) == payload
+
+
+@patch("mcp_client.requests.delete")
+def test_manage_delete_does_not_mask_404(mock_delete):
+    response = mcp.requests.Response()
+    response.status_code = 404
+    response._content = b"missing"
+    mock_delete.return_value = response
+
+    with pytest.raises(mcp.HTTPError):
+        mcp._manage({"op": "delete", "memory_id": "mem-1"})
+    mock_delete.assert_called_once()
+
+
+@patch("mcp_client.requests.get")
+def test_manage_read_still_requires_json(mock_get):
+    response = mcp.requests.Response()
+    response.status_code = 204
+    mock_get.return_value = response
+
+    with pytest.raises(ValueError, match="Expected JSON response"):
+        mcp._manage({"op": "read", "memory_id": "mem-1"})
+
+
 # ── _insights contradiction detection ────────────────────────────────────────
 
 @patch("mcp_client.requests.get")
